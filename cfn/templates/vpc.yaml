@@ -1,0 +1,945 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: "VPC | Subnet | RouteTable | InternetGateway | NatGateway"
+# ------------------------------------------------------------#
+# Metadata
+# ------------------------------------------------------------#
+Metadata:
+  AWS::CloudFormation::Interface:
+    ParameterGroups:
+      - Label:
+          default: "Network Configuration"
+        Parameters:
+          - System
+          - Infrastructure
+          - Environment
+          - VPCCIDR
+          - PublicSubnet1CIDR
+          - PublicSubnet2CIDR
+          - PrivateSubnet1CIDR
+          - PrivateSubnet2CIDR
+#          - PrivateSubnet3CIDR
+#          - PrivateSubnet4CIDR
+#          - PrivateSubnet5CIDR
+#          - PrivateSubnet6CIDR
+#          - PrivateSubnet7CIDR
+#          - PrivateSubnet8CIDR
+#          - PrivateSubnet9CIDR
+#          - TransitGatewayID
+
+
+# ------------------------------------------------------------#
+# Input Parameters
+# ------------------------------------------------------------#
+Parameters:
+  System:
+    Description: "System Name"
+    Type: String
+
+  Environment:
+    Description: "Environment Name"
+    Type: String
+
+  Infrastructure:
+    Description: "Infrastructure Name"
+    Type: String
+
+  VPCCIDR:
+    Description: "CIDR of VPC"
+    Type: String
+
+  PublicSubnet1CIDR:
+    Description: "CIDR of Public subnet"
+    Type: String
+
+  PublicSubnet2CIDR:
+    Description: "CIDR of Public subnet"
+    Type: String
+
+  PrivateSubnet1CIDR:
+    Description: "CIDR of Private subnet for front/back application"
+    Type: String
+
+  PrivateSubnet2CIDR:
+    Description: "CIDR of Private subnet for front/back application"
+    Type: String
+  #
+  #  PrivateSubnet3CIDR:
+  #    Description: "CIDR of Private subnet for DB"
+  #    Type: String
+  #
+  #  PrivateSubnet4CIDR:
+  #    Description: "CIDR of Private subnet for DB"
+  #    Type: String
+  #
+  #  PrivateSubnet5CIDR:
+  #    Description: "CIDR of Private subnet for DB"
+  #    Type: String
+  #
+  #  PrivateSubnet6CIDR:
+  #    Description: "CIDR of Private subnet for bastion"
+  #    Type: String
+  #
+  #  PrivateSubnet7CIDR:
+  #    Description: "CIDR of Private subnet for bastion"
+  #    Type: String
+  #
+  #  PrivateSubnet8CIDR:
+  #    Description: "CIDR of Private subnet for TGW attachment"
+  #    Type: String
+  #
+  #  PrivateSubnet9CIDR:
+  #    Description: "CIDR of Private subnet for TGW attachment"
+  #    Type: String
+  #
+  #  NWCIDR1a:
+  #    Description: "CIDR of Private subnet for TGW attachment in NW Engress VPC"
+  #    Type: String
+  #
+  #  NWCIDR1c:
+  #    Description: "CIDR of Private subnet for TGW attachment in NW Engress VPC"
+  #    Type: String
+  #
+  #  SCMRelayCIDR1a:
+  #    Description: "CIDR of Private subnet for TGW attachment in NW Engress VPC"
+  #    Type: String
+  #
+  #  SCMRelayCIDR1c:
+  #    Description: "CIDR of Private subnet for TGW attachment in NW Engress VPC"
+  #    Type: String
+  #
+  #  TransitGatewayID:
+  #    Description: "ID of Transit Gateway"
+  #    Type: String
+  #
+Resources:
+# ------------------------------------------------------------#
+#  VPC
+# ------------------------------------------------------------#
+  VPC:
+    Type: AWS::EC2::VPC
+    Properties:
+      CidrBlock: !Ref VPCCIDR
+      EnableDnsSupport: "true"
+      EnableDnsHostnames: "true"
+      InstanceTenancy: default
+      Tags:
+        - Key: Name
+          Value: !Sub "${System}-${Environment}-vpc-${Infrastructure}"
+        - Key: System
+          Value: !Ref System
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Infrastructure
+          Value: !Ref Infrastructure
+
+#  VPCFlowLog: 
+#    Type: AWS::EC2::FlowLog
+#    Properties:
+#      ResourceId: !Ref VPC
+#      ResourceType: VPC
+#      LogDestinationType: cloud-watch-logs
+#      LogDestination: !Sub "arn:aws:logs:ap-northeast-1:${AWS::AccountId}:log-group:${System}-${Environment}-vpcflowlog-${Infrastructure}"
+#      LogFormat: "${account-id} ${action} ${az-id} ${bytes} ${dstaddr} ${dstport} ${end} ${flow-direction} ${instance-id} ${interface-id} ${log-status} ${packets} ${pkt-dst-aws-service} ${pkt-dstaddr} ${pkt-src-aws-service} ${pkt-srcaddr} ${protocol} ${region} ${srcaddr} ${srcport} ${start} ${sublocation-id} ${sublocation-type} ${subnet-id} ${tcp-flags} ${traffic-path} ${type} ${version} ${vpc-id}"
+#      DestinationOptions:
+#        FileFormat: plain-text
+#        HiveCompatiblePartitions: false
+#        PerHourPartition: true
+#      TrafficType: ALL
+#      DeliverLogsPermissionArn: !GetAtt VpcFlowLogsRole.Arn
+#      Tags:
+#        - Key: Name
+#          Value: !Sub "${System}-${Environment}-vpcflowlog-${Infrastructure}"
+#        - Key: System
+#          Value: !Ref System
+#        - Key: Environment
+#          Value: !Ref Environment
+#        - Key: Infrastructure
+#          Value: !Ref Infrastructure
+#
+#
+#    VpcFlowLogsRole:
+#    Type: AWS::IAM::Role
+#    Properties:
+#      AssumeRolePolicyDocument:
+#        Version: "2012-10-17"
+#        Statement:
+#          - Effect: Allow
+#            Principal:
+#              Service: vpc-flow-logs.amazonaws.com
+#            Action: sts:AssumeRole
+#      Policies:
+#        - PolicyName: VpcFlowLogsToCloudWatch
+#          PolicyDocument:
+#            Version: "2012-10-17"
+#            Statement:
+#              - Effect: Allow
+#                Action:
+#                  - logs:CreateLogStream
+#                  - logs:PutLogEvents
+#                  - logs:DescribeLogGroups
+#                  - logs:DescribeLogStreams
+#                Resource:
+#                  - !GetAtt VpcFlowLogGroup.Arn
+#                  - !Sub "${VpcFlowLogGroup.Arn}:*"
+#  
+#  VpcFlowLogGroup:
+#    Type: AWS::Logs::LogGroup
+#    Properties:
+#      LogGroupName: !Sub "${System}-${Environment}-vpcflowlog-${Infrastructure}"
+#      RetentionInDays: 5
+#      Tags:
+#      - Key: Name
+#        Value: !Sub "${System}-${Environment}-vpcflowlog-${Infrastructure}"
+#      - Key: System
+#        Value: !Ref System
+#      - Key: Environment
+#        Value: !Ref Environment
+#      - Key: Infrastructure
+#        Value: !Ref Infrastructure
+
+# ------------------------------------------------------------#
+#  Internet Gateway
+# ------------------------------------------------------------#
+  InternetGateway:
+    Type: AWS::EC2::InternetGateway
+    Properties:
+      Tags:
+        - Key: Name
+          Value: !Sub "${System}-${Environment}-igw-${Infrastructure}"
+        - Key: System
+          Value: !Ref System
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Infrastructure
+          Value: !Ref Infrastructure
+
+  InternetGatewayAttachment:
+    Type: AWS::EC2::VPCGatewayAttachment
+    Properties:
+      InternetGatewayId: !Ref InternetGateway
+      VpcId: !Ref VPC
+
+# ------------------------------------------------------------#
+#  Subnet
+# ------------------------------------------------------------#
+  # Public Subnet (AZ=ap-northeast-1a)
+  PublicSubnet1:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref VPC
+      CidrBlock: !Ref PublicSubnet1CIDR
+      AvailabilityZone: 
+        !Select 
+          - 0
+          - Fn::GetAZs: !Ref 'AWS::Region'
+      Tags:
+        - Key: Name
+          Value: !Sub "${System}-${Environment}-subnet-public-1a-${Infrastructure}"
+        - Key: System
+          Value: !Ref System
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Infrastructure
+          Value: !Ref Infrastructure
+
+  # Public Subnet (AZ=ap-northeast-1c)
+  PublicSubnet2:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref VPC
+      CidrBlock: !Ref PublicSubnet2CIDR
+      AvailabilityZone: 
+        !Select 
+          - 1
+          - Fn::GetAZs: !Ref 'AWS::Region'
+      Tags:
+        - Key: Name
+          Value: !Sub "${System}-${Environment}-subnet-public-1c-${Infrastructure}"
+        - Key: System
+          Value: !Ref System
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Infrastructure
+          Value: !Ref Infrastructure
+
+  # Private Subnet for application (AZ=ap-northeast-1a)
+  PrivateSubnet1:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref VPC
+      CidrBlock: !Ref PrivateSubnet1CIDR
+      AvailabilityZone: 
+        !Select 
+          - 0
+          - Fn::GetAZs: !Ref 'AWS::Region'
+      Tags:
+        - Key: Name
+          Value: !Sub "${System}-${Environment}-subnet-private-1a-${Infrastructure}"
+        - Key: System
+          Value: !Ref System
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Infrastructure
+          Value: !Ref Infrastructure
+
+  # Private Subnet for application (AZ=ap-northeast-1c)
+  PrivateSubnet2:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref VPC
+      CidrBlock: !Ref PrivateSubnet2CIDR
+      AvailabilityZone: 
+        !Select 
+          - 1
+          - Fn::GetAZs: !Ref 'AWS::Region'
+      Tags:
+        - Key: Name
+          Value: !Sub "${System}-${Environment}-subnet-private-1c-${Infrastructure}"
+        - Key: System
+          Value: !Ref System
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Infrastructure
+          Value: !Ref Infrastructure
+
+#  # Private Subnet for DB (AZ=ap-northeast-1a)
+#  PrivateSubnet3:
+#    Type: AWS::EC2::Subnet
+#    Properties:
+#      VpcId: !Ref VPC 
+#      CidrBlock: !Ref PrivateSubnet3CIDR
+#      AvailabilityZone: 
+#        !Select 
+#          - 0
+#          - Fn::GetAZs: !Ref 'AWS::Region'
+#      Tags:
+#        - Key: Name
+#          Value: !Sub "${System}-${Environment}-subnet-${Infrastructure}-private-1a-03"
+#        - Key: System
+#          Value: !Ref System
+#        - Key: Environment
+#          Value: !Ref Environment
+#        - Key: Infrastructure
+#          Value: !Ref Infrastructure
+#        - Key: Prefix
+#          Value: db
+#
+#  # Private Subnet for DB (AZ=ap-northeast-1c)
+#  PrivateSubnet4:
+#    Type: AWS::EC2::Subnet
+#    Properties:
+#      VpcId: !Ref VPC
+#      CidrBlock: !Ref PrivateSubnet4CIDR
+#      AvailabilityZone: 
+#        !Select 
+#          - 1
+#          - Fn::GetAZs: !Ref 'AWS::Region'
+#      Tags:
+#        - Key: Name
+#          Value: !Sub "${System}-${Environment}-subnet-${Infrastructure}-private-1c-04"
+#        - Key: System
+#          Value: !Ref System
+#        - Key: Environment
+#          Value: !Ref Environment
+#        - Key: Infrastructure
+#          Value: !Ref Infrastructure
+#        - Key: Prefix
+#          Value: db
+#
+#  # Private Subnet for DB (AZ=ap-northeast-1d)
+#  PrivateSubnet5:
+#    Type: AWS::EC2::Subnet
+#    Properties:
+#      VpcId: !Ref VPC
+#      CidrBlock: !Ref PrivateSubnet5CIDR
+#      AvailabilityZone: 
+#        !Select 
+#          - 2
+#          - Fn::GetAZs: !Ref 'AWS::Region'
+#      Tags:
+#        - Key: Name
+#          Value: !Sub "${System}-${Environment}-subnet-${Infrastructure}-private-1d-05"
+#        - Key: System
+#          Value: !Ref System
+#        - Key: Environment
+#          Value: !Ref Environment
+#        - Key: Infrastructure
+#          Value: !Ref Infrastructure
+#        - Key: Prefix
+#          Value: db
+#
+#  # Private Subnet for bastion (AZ=ap-northeast-1a)
+#  PrivateSubnet6:
+#    Type: AWS::EC2::Subnet
+#    Properties:
+#      VpcId: !Ref VPC
+#      CidrBlock: !Ref PrivateSubnet6CIDR
+#      AvailabilityZone: 
+#        !Select 
+#          - 0
+#          - Fn::GetAZs: !Ref 'AWS::Region'
+#      Tags:
+#        - Key: Name
+#          Value: !Sub "${System}-${Environment}-subnet-${Infrastructure}-private-1a-06"
+#        - Key: System
+#          Value: !Ref System
+#        - Key: Environment
+#          Value: !Ref Environment
+#        - Key: Infrastructure
+#          Value: !Ref Infrastructure
+#        - Key: Prefix
+#          Value: ecs
+#
+#  # Private Subnet for bastion (AZ=ap-northeast-1c)
+#  PrivateSubnet7:
+#    Type: AWS::EC2::Subnet
+#    Properties:
+#      VpcId: !Ref VPC
+#      CidrBlock: !Ref PrivateSubnet7CIDR
+#      AvailabilityZone: 
+#        !Select 
+#          - 1
+#          - Fn::GetAZs: !Ref 'AWS::Region'
+#      Tags:
+#        - Key: Name
+#          Value: !Sub "${System}-${Environment}-subnet-${Infrastructure}-private-1c-07"
+#        - Key: System
+#          Value: !Ref System
+#        - Key: Environment
+#          Value: !Ref Environment
+#        - Key: Prefix
+#          Value: ecs
+#
+#  # Private Subnet for TranstGateway Attachment (AZ=ap-northeast-1a)
+#  PrivateSubnet8:
+#    Type: AWS::EC2::Subnet
+#    Properties:
+#      VpcId: !Ref VPC
+#      CidrBlock: !Ref PrivateSubnet8CIDR
+#      AvailabilityZone: 
+#        !Select 
+#          - 0
+#          - Fn::GetAZs: !Ref 'AWS::Region'
+#      Tags:
+#        - Key: Name
+#          Value: !Sub "${System}-${Environment}-subnet-private-1a-08"
+#        - Key: System
+#          Value: !Ref System
+#        - Key: Environment
+#          Value: !Ref Environment
+#        - Key: Prefix
+#          Value: tgw_attach
+#
+#  # Private Subnet for TranstGateway Attachment (AZ=ap-northeast-1c)
+#  PrivateSubnet9:
+#    Type: AWS::EC2::Subnet
+#    Properties:
+#      VpcId: !Ref VPC
+#      CidrBlock: !Ref PrivateSubnet9CIDR
+#      AvailabilityZone: 
+#        !Select 
+#          - 1
+#          - Fn::GetAZs: !Ref 'AWS::Region'
+#      Tags:
+#        - Key: Name
+#          Value: !Sub "${System}-${Environment}-subnet-private-1c-09"
+#        - Key: System
+#          Value: !Ref System
+#        - Key: Environment
+#          Value: !Ref Environment
+#        - Key: Prefix
+#          Value: tgw_attach
+#
+#
+# ------------------------------------------------------------#
+#  NAT Gateway 
+# ------------------------------------------------------------#
+  ElasticIPforNat:
+    Type: AWS::EC2::EIP
+    Properties:
+      Domain: vpc
+
+  NatGateway:
+    Type: AWS::EC2::NatGateway
+    Properties:
+      AllocationId: !GetAtt ElasticIPforNat.AllocationId
+      SubnetId: !Ref PublicSubnet1
+      Tags:
+        - Key: Name
+          Value: !Sub "${System}-${Environment}-nat-${Infrastructure}"
+        - Key: System
+          Value: !Ref System 
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Infrastructure
+          Value: !Ref Infrastructure
+
+# ------------------------------------------------------------#
+#  TGW Attachment   ※QA環境, 本番環境対象
+# ------------------------------------------------------------#
+#  TransitGatewayAttachmet:
+#    Type: AWS::EC2::TransitGatewayAttachment
+#    Condition: ApplyforQAandProd
+#    Properties:
+#      TransitGatewayId: !Ref TransitGatewayID
+#      VpcId: !Ref VPC
+#      SubnetIds:
+#        - !Ref PrivateSubnet8
+#        - !Ref PrivateSubnet9
+#      Tags: 
+#        - Key: Name
+#          Value: !Sub ${System}-${Environment}-tgw_attach-${Infrastructure}"
+#        - Key: System
+#          Value: !Ref System
+#        - Key: Environment
+#          Value: !Ref Environment
+
+# ------------------------------------------------------------#
+#  RouteTable
+# ------------------------------------------------------------#
+  # RouteTable for Public Subnet (AZ=ap-northeast-1a)
+  PublicRouteTable1:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref VPC
+      Tags:
+        - Key: Name
+          Value: !Sub "${System}-${Environment}-rtb-public-1a-${Infrastructure}"
+        - Key: System
+          Value: !Ref System
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Infrastructure
+          Value: !Ref Infrastructure
+
+  # RouteTable for Public Subnet (AZ=ap-northeast-1c)
+  PublicRouteTable1c:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref VPC
+      Tags:
+        - Key: Name
+          Value: !Sub "${System}-${Environment}-rtb-public-1c-${Infrastructure}"
+        - Key: System
+          Value: !Ref System
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Infrastructure
+          Value: !Ref Infrastructure
+
+  # RouteTable for Private Subnet for front/back application (AZ=ap-northeast-1a)
+  PrivateRouteTable1:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref VPC
+      Tags:
+        - Key: Name
+          Value: !Sub "${System}-${Environment}-rtb-private-1a-${Infrastructure}"
+        - Key: System
+          Value: !Ref System
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Infrastructure
+          Value: !Ref Infrastructure
+  
+  # RouteTable for Private Subnet for front/back application (AZ=ap-northeast-1c)
+  PrivateRouteTable1c:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref VPC
+      Tags:
+        - Key: Name
+          Value: !Sub "${System}-${Environment}-rtb-private-1c-${Infrastructure}"
+        - Key: System
+          Value: !Ref System
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Infrastructure
+          Value: !Ref Infrastructure
+
+  # RouteTable for Private Subnet for DB (AZ=ap-northeast-1a)
+#  PrivateRouteTable2:
+#    Type: AWS::EC2::RouteTable
+#    Properties:
+#      VpcId: !Ref VPC
+#      Tags:
+#        - Key: Name
+#          Value: !Sub "${System}-${Environment}-rtb-${Infrastructure}-private-1a-03"
+#        - Key: System
+#          Value: !Ref System
+#        - Key: Environment
+#          Value: !Ref Environment
+#        - Key: Infrastructure
+#          Value: !Ref Infrastructure
+#        - Key: Prefix
+#          Value: db
+#
+#  # RouteTable for Private Subnet for DB (AZ=ap-northeast-1c)
+#  PrivateRouteTable2c:
+#    Type: AWS::EC2::RouteTable
+#    Properties:
+#      VpcId: !Ref VPC
+#      Tags:
+#        - Key: Name
+#          Value: !Sub "${System}-${Environment}-rtb-${Infrastructure}-private-1c-04"
+#        - Key: System
+#          Value: !Ref System
+#        - Key: Environment
+#          Value: !Ref Environment
+#        - Key: Infrastructure
+#          Value: !Ref Infrastructure
+#        - Key: Prefix
+#          Value: db
+#
+#  # RouteTable for Private Subnet for DB (AZ=ap-northeast-1d)
+#  PrivateRouteTable2d:
+#    Type: AWS::EC2::RouteTable
+#    Properties:
+#      VpcId: !Ref VPC
+#      Tags:
+#        - Key: Name
+#          Value: !Sub "${System}-${Environment}-rtb-${Infrastructure}-private-1d-05"
+#        - Key: System
+#          Value: !Ref System
+#        - Key: Environment
+#          Value: !Ref Environment
+#        - Key: Infrastructure
+#          Value: !Ref Infrastructure
+#        - Key: Prefix
+#          Value: db
+#
+#  # RouteTable for Private Subnet for bastion (AZ=ap-northeast-1a)
+#  PrivateRouteTable3:
+#    Type: AWS::EC2::RouteTable
+#    Properties:
+#      VpcId: !Ref VPC
+#      Tags:
+#        - Key: Name
+#          Value: !Sub "${System}-${Environment}-rtb-${Infrastructure}-private-1a-06"
+#        - Key: System
+#          Value: !Ref System
+#        - Key: Environment
+#          Value: !Ref Environment
+#        - Key: Infrastructure
+#          Value: !Ref Infrastructure
+#        - Key: Prefix
+#          Value: ecs
+#
+#  # RouteTable for Private Subnet for bastion (AZ=ap-northeast-1c)
+#  PrivateRouteTable3c:
+#    Type: AWS::EC2::RouteTable
+#    Properties:
+#      VpcId: !Ref VPC
+#      Tags:
+#        - Key: Name
+#          Value: !Sub "${System}-${Environment}-rtb-${Infrastructure}-private-1c-07"
+#        - Key: System
+#          Value: !Ref System
+#        - Key: Environment
+#          Value: !Ref Environment
+#        - Key: Infrastructure
+#          Value: !Ref Infrastructure
+#        - Key: Prefix
+#          Value: ecs
+#
+#  # RouteTable for Private Subnet for TGW attachment (AZ=ap-northeast-1a)
+#  PrivateRouteTableForTGW:
+#    Type: AWS::EC2::RouteTable
+#    Properties:
+#      VpcId: !Ref VPC
+#      Tags:
+#        - Key: Name
+#          Value: !Sub "${System}-${Environment}-rtb-private-1a-08"
+#        - Key: System
+#          Value: !Ref System
+#        - Key: Environment
+#          Value: !Ref Environment
+#        - Key: Prefix
+#          Value: tgw_attach
+#
+#  # RouteTable for Private Subnet for TGW attachment (AZ=ap-northeast-1c)
+#  PrivateRouteTableForTGW1c:
+#    Type: AWS::EC2::RouteTable
+#    Properties:
+#      VpcId: !Ref VPC
+#      Tags:
+#        - Key: Name
+#          Value: !Sub "${System}-${Environment}-rtb-private-1c-09"
+#        - Key: System
+#          Value: !Ref System
+#        - Key: Environment
+#          Value: !Ref Environment
+#        - Key: Prefix
+#          Value: tgw_attach
+
+# ------------------------------------------------------------#
+# Routing
+# ------------------------------------------------------------#
+  # Routing to InternetGateway from public subnet (AZ=ap-northeast-1a)
+  PublicRoute1:
+    Type: AWS::EC2::Route
+    DependsOn: InternetGatewayAttachment
+    Properties:
+      RouteTableId: !Ref PublicRouteTable1
+      DestinationCidrBlock: "0.0.0.0/0"
+      GatewayId: !Ref InternetGateway
+      
+  # Routing to InternetGateway from public subnet (AZ=ap-northeast-1c)
+  PublicRoute2:
+    Type: AWS::EC2::Route
+    DependsOn: InternetGatewayAttachment
+    Properties:
+      RouteTableId: !Ref PublicRouteTable1c
+      DestinationCidrBlock: "0.0.0.0/0"
+      GatewayId: !Ref InternetGateway
+
+  # Routing to NatGateway from bastion subnet (AZ=ap-northeast-1a) 
+#  PrivateRouteFromNatToPrivateSubnet6:
+#    Type: AWS::EC2::Route
+#    Properties:
+#      RouteTableId: !Ref PrivateRouteTable3
+#      DestinationCidrBlock: "0.0.0.0/0"
+#      NatGatewayId: !Ref NatGateway
+#
+#  # Routing to NatGateway from bastion subnet (AZ=ap-northeast-1c) 
+#  PrivateRouteFromNatToPrivateSubnet7:
+#    Type: AWS::EC2::Route
+#    Properties:
+#      RouteTableId: !Ref PrivateRouteTable3c
+#      DestinationCidrBlock: "0.0.0.0/0"
+#      NatGatewayId: !Ref NatGateway
+
+  # Routing to NatGateway from EKS subnet (AZ=ap-northeast-1a) 
+  PrivateRouteFromNatToPrivateSubnet1:
+    Type: AWS::EC2::Route
+    Properties:
+      RouteTableId: !Ref PrivateRouteTable1
+      DestinationCidrBlock: "0.0.0.0/0"
+      NatGatewayId: !Ref NatGateway
+
+  # Routing to NatGateway from EKS subnet (AZ=ap-northeast-1c) 
+  PrivateRouteFromNatToPrivateSubnet2:
+    Type: AWS::EC2::Route
+    Properties:
+      RouteTableId: !Ref PrivateRouteTable1c
+      DestinationCidrBlock: "0.0.0.0/0"
+      NatGatewayId: !Ref NatGateway
+
+# ------------------------------------------------------------#
+# RouteTable Associate
+# ------------------------------------------------------------#
+  PublicSubnet1RouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref PublicSubnet1
+      RouteTableId: !Ref PublicRouteTable1
+
+  PublicSubnet2RouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref PublicSubnet2
+      RouteTableId: !Ref PublicRouteTable1c
+
+  PrivateSubnet1RouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref PrivateSubnet1
+      RouteTableId: !Ref PrivateRouteTable1
+
+  PrivateSubnet2RouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref PrivateSubnet2
+      RouteTableId: !Ref PrivateRouteTable1c
+
+#  PrivateSubnet3RouteTableAssociation:
+#    Type: AWS::EC2::SubnetRouteTableAssociation
+#    Properties:
+#      SubnetId: !Ref PrivateSubnet3
+#      RouteTableId: !Ref PrivateRouteTable2
+#
+#  PrivateSubnet4RouteTableAssociation:
+#    Type: AWS::EC2::SubnetRouteTableAssociation
+#    Properties:
+#      SubnetId: !Ref PrivateSubnet4
+#      RouteTableId: !Ref PrivateRouteTable2c
+#
+#  PrivateSubnet5RouteTableAssociation:
+#    Type: AWS::EC2::SubnetRouteTableAssociation
+#    Properties:
+#      SubnetId: !Ref PrivateSubnet5
+#      RouteTableId: !Ref PrivateRouteTable2d
+#
+#  PrivateSubnet6RouteTableAssociation:
+#    Type: AWS::EC2::SubnetRouteTableAssociation
+#    Properties:
+#      SubnetId: !Ref PrivateSubnet6
+#      RouteTableId: !Ref PrivateRouteTable3
+#
+#  PrivateSubnet7RouteTableAssociation:
+#    Type: AWS::EC2::SubnetRouteTableAssociation
+#    Properties:
+#      SubnetId: !Ref PrivateSubnet7
+#      RouteTableId: !Ref PrivateRouteTable3c
+#
+#  PrivateSubnet8RouteTableAssociation:
+#    Type: AWS::EC2::SubnetRouteTableAssociation
+#    Properties:
+#      SubnetId: !Ref PrivateSubnet8
+#      RouteTableId: !Ref PrivateRouteTableForTGW
+#
+#  PrivateSubnet9RouteTableAssociation:
+#    Type: AWS::EC2::SubnetRouteTableAssociation
+#    Properties:
+#      SubnetId: !Ref PrivateSubnet9
+#      RouteTableId: !Ref PrivateRouteTableForTGW1c
+
+# ------------------------------------------------------------#
+#  Outputs
+# ------------------------------------------------------------#
+Outputs:
+  VPCID:
+    Description: "Outputs for ID of ${System} vpc"
+    Value: !Ref VPC
+    Export:
+      Name: !Sub export-${System}-${Environment}-vpc-${Infrastructure}
+
+  VPCCIDR:
+    Description: "Outputs for CIDR of ${System} vpc"
+    Value: !GetAtt VPC.CidrBlock
+    Export:
+      Name: !Sub export-${System}-${Environment}-vpc-cidr-${Infrastructure}
+
+  PublicSubnet1ID:
+    Description: "Outputs for ID of Public Subnet (1a)"
+    Value: !Ref PublicSubnet1
+    Export:
+      Name: !Sub export-${System}-${Environment}-subnet-public-1a-${Infrastructure}
+
+  PublicSubnet2ID:
+    Description: "Outputs for ID of Public Subnet (1c)"
+    Value: !Ref PublicSubnet2
+    Export:
+      Name: !Sub export-${System}-${Environment}-subnet-public-1c-${Infrastructure}
+
+  PrivateSubnet1ID:
+    Description: "Outputs for ID of Private Subnet for eks(1a)"
+    Value: !Ref PrivateSubnet1
+    Export:
+      Name: !Sub export-${System}-${Environment}-subnet-private-1a-${Infrastructure}
+
+  PrivateSubnet2ID:
+    Description: "Outputs for ID of Private Subnet for eks(1c)"
+    Value: !Ref PrivateSubnet2
+    Export:
+      Name: !Sub export-${System}-${Environment}-subnet-private-1c-${Infrastructure}
+
+#  PrivateSubnet3ID:
+#    Description: "Outputs for ID of Private Subnet for DB(1a)"
+#    Value: !Ref PrivateSubnet3
+#    Export:
+#      Name: !Sub export-${System}-${Environment}-subnet-${Infrastructure}-private-1a-03
+#
+#  PrivateSubnet4ID:
+#    Description: "Outputs for ID of Private Subnet for DB(1c)"
+#    Value: !Ref PrivateSubnet4
+#    Export:
+#      Name: !Sub export-${System}-${Environment}-subnet-${Infrastructure}-private-1c-04
+#
+#  PrivateSubnet5ID:
+#    Description: "Outputs for ID of Private Subnet for DB(1d)"
+#    Value: !Ref PrivateSubnet5
+#    Export:
+#      Name: !Sub export-${System}-${Environment}-subnet-${Infrastructure}-private-1d-05
+#
+#  PrivateSubnet6ID:
+#    Description: "Outputs for ID of Private Subnet for bastion(1a)"
+#    Value: !Ref PrivateSubnet6
+#    Export:
+#      Name: !Sub export-${System}-${Environment}-subnet-${Infrastructure}-private-1a-06
+#
+#  PrivateSubnet7ID:
+#    Description: "Outputs for ID of Private Subnet for bastion(1c)"
+#    Value: !Ref PrivateSubnet7
+#    Export:
+#      Name: !Sub export-${System}-${Environment}-subnet-${Infrastructure}-private-1c-07
+#
+#  PrivateSubnet8ID:
+#    Description: "Outputs for ID of Private Subnet for TransitGateway Attachment(1c)"
+#    Value: !Ref PrivateSubnet8
+#    Export:
+#      Name: !Sub export-${System}-${Environment}-subnet-private-1c-08
+#
+#  PrivateSubnet9ID:
+#    Description: "Outputs for ID of Private Subnet for TransitGateway Attachment(1d)"
+#    Value: !Ref PrivateSubnet9
+#    Export:
+#      Name: !Sub export-${System}-${Environment}-subnet-private-1d-09
+#
+  # Route Table
+  PublicRouteTable1ID:
+    Description: "Outputs for ID of Route Table of Public Subnet"
+    Value: !Ref PublicRouteTable1
+    Export:
+      Name: !Sub export-${System}-${Environment}-rtb-public-1a-${Infrastructure}
+
+  PublicRouteTable1cID:
+    Description: "Outputs for ID of Route Table of Public Subnet"
+    Value: !Ref PublicRouteTable1c
+    Export:
+      Name: !Sub export-${System}-${Environment}-rtb-public-1c-${Infrastructure}
+
+  PrivateRouteTable1ID:
+    Description: "Outputs for ID of Route Table of Private Subnet for EKS"
+    Value: !Ref PrivateRouteTable1
+    Export:
+      Name: !Sub export-${System}-${Environment}-rtb-private-1a-${Infrastructure}
+
+  PrivateRouteTable1cID:
+    Description: "Outputs for ID of Route Table of Private Subnet for EKS"
+    Value: !Ref PrivateRouteTable1c
+    Export:
+      Name: !Sub export-${System}-${Environment}-rtb-private-1c-${Infrastructure}
+
+#  PrivateRouteTable2ID:
+#    Description: "Outputs for ID of Route Table of Private Subnet for DB"
+#    Value: !Ref PrivateRouteTable2
+#    Export:
+#      Name: !Sub export-${System}-${Environment}-rtb-${Infrastructure}-private-1a-03
+#
+#  PrivateRouteTable2cID:
+#    Description: "Outputs for ID of Route Table of Private Subnet for DB"
+#    Value: !Ref PrivateRouteTable2c
+#    Export:
+#      Name: !Sub export-${System}-${Environment}-rtb-${Infrastructure}-private-1c-04
+#
+#  PrivateRouteTable2dID:
+#    Description: "Outputs for ID of Route Table of Private Subnet for DB"
+#    Value: !Ref PrivateRouteTable2d
+#    Export:
+#      Name: !Sub export-${System}-${Environment}-rtb-${Infrastructure}-private-1d-05
+#
+#  PrivateRouteTable3ID:
+#    Description: "Outputs for ID of Route Table of Private Subnet for bastion"
+#    Value: !Ref PrivateRouteTable3
+#    Export:
+#      Name: !Sub export-${System}-${Environment}-rtb-${Infrastructure}-private-1a-06
+#
+#  PrivateRouteTable3cID:
+#    Description: "Outputs for ID of Route Table of Private Subnet for bastion"
+#    Value: !Ref PrivateRouteTable3c
+#    Export:
+#      Name: !Sub export-${System}-${Environment}-rtb-${Infrastructure}-private-1c-07
+#
+#  PrivateRouteTableForTGWID:
+#    Description: "Outputs for ID of Route Table of Private Subnet for TransitGateway Attachment"
+#    Value: !Ref PrivateRouteTableForTGW
+#    Export:
+#      Name: !Sub export-${System}-${Environment}-rtb-private-1a-08
+#
+#  PrivateRouteTableForTGWID1c:
+#    Description: "Outputs for ID of Route Table of Private Subnet for TransitGateway Attachment"
+#    Value: !Ref PrivateRouteTableForTGW1c
+#    Export:
+#      Name: !Sub export-${System}-${Environment}-rtb-private-1c-09
+#      

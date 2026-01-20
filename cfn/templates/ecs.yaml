@@ -1,0 +1,563 @@
+AWSTemplateFormatVersion: 2010-09-09
+Description: "This template deploys ECS cluster and tasks to the provided VPC and subnets"
+# ------------------------------------------------------------#
+# Metadata
+# ------------------------------------------------------------#
+Metadata:
+  AWS::CloudFormation::Interface:
+    ParameterGroups:
+      - Label:
+          default: "ECS Configuration"
+        Parameters:
+          - System
+          - Environment
+          - Infrastructure
+          - S3EndpointPrefixListId
+          - ContainerImage
+          - ImageTag
+          - EcsTaskDesiredCount
+          - ContainerName
+          - ECRRepositoryName
+
+# ------------------------------------------------------------#
+# Input Parameters
+# ------------------------------------------------------------#
+Parameters:
+  System:
+    Description: "System Name"
+    Type: String
+
+  Environment:
+    Description: "Environment Name"
+    Type: String
+
+  Infrastructure:
+    Description: "Infrastructure Name"
+    Type: String
+
+  S3EndpointPrefixListId:
+    Type: String
+    Description: "ID of the S3 VPC endpoint"
+
+  ContainerImage:
+    Type: String
+    Description: "Container Image of the ECS Task"
+
+  ImageTag:
+    Type: String
+    Description: "Image tag of the container"
+
+  EcsTaskDesiredCount:
+    Type: Number
+    Description: "The desired number of tasks to run in the ECS cluster."
+
+  ContainerName:
+    Type: String
+    Description: "The name of the container to be deployed."
+
+  ECRRepositoryName:
+    Type: String
+    Description: "The name of the ECR repository"
+
+Resources:
+# ------------------------------------------------------------#
+# ECS Cluster
+# ------------------------------------------------------------#
+  EcsCluster:
+    Type: AWS::ECS::Cluster
+    Properties:
+      CapacityProviders:
+        - "FARGATE_SPOT"
+      ClusterName: !Sub "${System}-${Environment}-ecs-${Infrastructure}"
+      ClusterSettings:
+        - Name: containerInsights
+          Value: disabled
+      Configuration:
+        ExecuteCommandConfiguration:
+          LogConfiguration:
+            CloudWatchLogGroupName: !Ref EcsExecLogGroup
+          Logging: "OVERRIDE"
+      DefaultCapacityProviderStrategy:
+        - CapacityProvider: "FARGATE_SPOT"
+          Weight: 1
+      ServiceConnectDefaults:
+        Namespace: !Sub "${Infrastructure}"
+      Tags:
+        - Key: Name
+          Value: !Sub "${System}-${Environment}-ecs-${Infrastructure}"
+        - Key: Infrastructure
+          Value: !Ref Infrastructure
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: System
+          Value: !Ref System
+
+# ------------------------------------------------------------#
+# ECS Service
+# ------------------------------------------------------------#
+  EcsService:
+    Type: AWS::ECS::Service
+    Properties:
+      Cluster: !Ref EcsCluster
+      DeploymentConfiguration:
+        DeploymentCircuitBreaker:
+          Enable: False
+          Rollback: False
+      DeploymentController:
+        Type: "ECS"
+      DesiredCount: !Sub ${EcsTaskDesiredCount}
+      EnableExecuteCommand: True
+      LaunchType: "FARGATE"
+      NetworkConfiguration:
+        AwsvpcConfiguration:
+          SecurityGroups:
+            - !Ref EcsServiceSecurityGroup
+          Subnets:
+            - Fn::ImportValue:
+                Fn::Sub: export-${System}-${Environment}-subnet-private-1a-${Infrastructure}
+            # MultiAZの場合以下を有効化
+            #- Fn::ImportValue:
+            #    Fn::Sub: export-${System}-${Environment}-subnet-private-1c-${Infrastructure}
+      ServiceName: !Sub ${ContainerName}
+      Tags:
+        - Key: Name
+          Value: !Sub ${ContainerName}
+        - Key: Infrastructure
+          Value: !Ref Infrastructure
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: System
+          Value: !Ref System
+      TaskDefinition: !Ref EcsTaskDefinition
+
+# ------------------------------------------------------------#
+# ECS Task Definition
+# ------------------------------------------------------------#
+  EcsTaskDefinition:
+    Type: AWS::ECS::TaskDefinition
+    Properties:
+      ContainerDefinitions:
+        - Cpu: 256
+          Image: !Sub ${ContainerImage}:${ImageTag}
+          LinuxParameters:
+            InitProcessEnabled: True
+          LogConfiguration:
+            LogDriver: "awslogs"
+            Options:
+              awslogs-group: !Ref EcsLogGroup
+              awslogs-region: !Ref AWS::Region
+              awslogs-stream-prefix: !Sub "${System}"
+          Memory: 512
+          Name: !Sub ${ContainerName}
+          PseudoTerminal: False
+          ReadonlyRootFilesystem: False # The SSM agent requires that the container file system is able to be written to in order to create the required directories and files
+      Cpu: 256
+      ExecutionRoleArn: !GetAtt EcsTaskExecRole.Arn
+      Family: !Sub ${ContainerName}
+      Memory: 512
+      NetworkMode: "awsvpc"
+      PidMode: "task"
+      RequiresCompatibilities:
+        - "FARGATE"
+      RuntimePlatform:
+        CpuArchitecture: "X86_64"
+        OperatingSystemFamily: "LINUX"
+      Tags:
+        - Key: Name
+          Value: !Sub ${ContainerName}
+        - Key: Infrastructure
+          Value: !Ref Infrastructure
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: System
+          Value: !Ref System
+      TaskRoleArn: !Ref EcsTaskRole
+
+# ------------------------------------------------------------#
+# ECS Service Security Group
+# ------------------------------------------------------------#
+  EcsServiceSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      VpcId:
+        Fn::ImportValue: !Sub export-${System}-${Environment}-vpc-${Infrastructure}
+      GroupName: !Sub "${System}-${Environment}-sg-${Infrastructure}-ecs-bastion"
+      GroupDescription: "ECS security group"
+      SecurityGroupEgress:
+        - IpProtocol: tcp
+          FromPort: 80
+          ToPort: 80
+          CidrIp: 0.0.0.0/0
+        - IpProtocol: tcp
+          FromPort: 443
+          ToPort: 443
+          CidrIp: 0.0.0.0/0
+        - IpProtocol: tcp
+          FromPort: 5432
+          ToPort: 5432
+          CidrIp: 0.0.0.0/0
+      Tags:
+        - Key: "Name"
+          Value: !Sub "${System}-${Environment}-sg-${Infrastructure}-ecs-bastion"
+        - Key: Infrastructure
+          Value: !Ref Infrastructure
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: System
+          Value: !Ref System
+
+# ------------------------------------------------------------#
+# CloudWatch LogGroup
+# ------------------------------------------------------------#
+  EcsLogGroup:
+    Type: "AWS::Logs::LogGroup"
+    Properties:
+      LogGroupName: !Sub ${System}-${Environment}-${Infrastructure}-ecs
+      RetentionInDays: 5
+      Tags:
+      - Key: Name
+        Value: !Sub ${System}-${Environment}-${Infrastructure}-ecs
+      - Key: System
+        Value: !Ref System
+      - Key: Environment
+        Value: !Ref Environment
+      - Key: Infrastructure
+        Value: !Ref Infrastructure
+
+  EcsExecLogGroup:
+    Type: "AWS::Logs::LogGroup"
+    Properties:
+      LogGroupName: !Sub ${System}-${Environment}-${Infrastructure}-ecs_exec
+      RetentionInDays: 5
+      Tags:
+      - Key: Name
+        Value: !Sub ${System}-${Environment}-${Infrastructure}-ecs_exec
+      - Key: System
+        Value: !Ref System
+      - Key: Environment
+        Value: !Ref Environment
+      - Key: Infrastructure
+        Value: !Ref Infrastructure
+
+# ------------------------------------------------------------#
+# S3 Bucket for ECS Exec Log
+# ------------------------------------------------------------#
+  EcsExecLogBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Sub "${System}-${Environment}-s3-ecsexec-${Infrastructure}-log"
+      AccessControl: Private
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: True
+        BlockPublicPolicy: True
+        IgnorePublicAcls: True
+        RestrictPublicBuckets: True
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault:
+              SSEAlgorithm: AES256
+
+# ------------------------------------------------------------#
+# IAM Policy for EcsExec Role
+# ------------------------------------------------------------#
+  EcsExecLoggingManagedPolicy:
+    Type: AWS::IAM::ManagedPolicy
+    Properties:
+      PolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: "Allow"
+            Action:
+              - "logs:CreateLogStream"
+              - "logs:DescribeLogGroups"
+              - "logs:DescribeLogStreams"
+              - "logs:PutLogEvents"
+              - "logs:PutRetentionPolicy"
+              - "logs:TagResource"
+            Resource: "*"
+      ManagedPolicyName: !Sub "${System}-${Environment}-policy-${Infrastructure}-ecs_exec_logging"
+
+  EcsExecSsmManagedPolicy:
+    Type: AWS::IAM::ManagedPolicy
+    Properties:
+      PolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: "Allow"
+            Action:
+              - "ssmmessages:CreateControlChannel"
+              - "ssmmessages:CreateDataChannel"
+              - "ssmmessages:OpenControlChannel"
+              - "ssmmessages:OpenDataChannel"
+            Resource: "*"
+      ManagedPolicyName: !Sub "${System}-${Environment}-policy-${Infrastructure}-ecs_exec_ssm"
+
+  SessionManagerPassRoleManagedPolicy:
+    Type: AWS::IAM::ManagedPolicy
+    Properties:
+      PolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: "Allow"
+            Action:
+              - "iam:PassRole"
+            Resource: "*"
+            Condition:
+              StringEquals:
+                iam:PassedToService: "ssm.amazonaws.com"
+      ManagedPolicyName: !Sub "${System}-${Environment}-policy-${Infrastructure}-session_mgr_passrole"
+
+  SessionManagerSsmManagedPolicy:
+    Type: AWS::IAM::ManagedPolicy
+    Properties:
+      PolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: "Allow"
+            Action:
+              - "ssm:DeleteActivation"
+              - "ssm:RemoveTagsFromResource"
+              - "ssm:AddTagsToResource"
+              - "ssm:CreateActivation"
+              - "ssm:DeregisterManagedInstance"
+            Resource: "*"
+      ManagedPolicyName: !Sub "${System}-${Environment}-${Infrastructure}-policy-session_mgr_ssm"
+
+# ------------------------------------------------------------#
+# IAM Policy for ECS Task Role
+# ------------------------------------------------------------#
+  EcsTaskRDSManagedPolicy:
+    Type: AWS::IAM::ManagedPolicy
+    Properties:
+      PolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: "Allow"
+            Action:
+              - "rds-data:*"
+            Resource:
+              - !Sub "arn:aws:rds:${AWS::Region}:${AWS::AccountId}:cluster:${System}-${Environment}-aurora-cluster-${Infrastructure}*"
+            Condition:
+              StringEquals:
+                aws:ResourceTag/Name: !Sub "${System}-${Environment}-aurora-cluster-${Infrastructure}"
+      ManagedPolicyName: !Sub "${System}-${Environment}-policy-${Infrastructure}-ecs_task_rds"
+
+  EcsTaskKmsManagedPolicy:
+    Type: AWS::IAM::ManagedPolicy
+    Properties:
+      PolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: "Allow"
+            Action:
+              - "kms:CreateKey"
+              - "kms:CreateAlias"
+              - "kms:PutKeyPolicy"
+              - "kms:EnableKeyRotation"
+              - "kms:Decrypt"
+              - "kms:TagResource"
+              - "kms:UntagResource"
+              - "kms:ListResourceTags"
+            Resource: "*"
+      ManagedPolicyName: !Sub "${System}-${Environment}-policy-${Infrastructure}-ecs_task_kms"
+
+  EcsTaskS3ManagedPolicy:
+    Type: AWS::IAM::ManagedPolicy
+    Properties:
+      PolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: "Allow"
+            Action:
+              - s3:GetBucketLocation
+              - s3:GetEncryptionConfiguration
+              - s3:PutObject
+              - s3:GetObject
+              - s3:GetObjectVersion
+              - s3:ListBucket
+            Resource: '*'
+      ManagedPolicyName: !Sub "${System}-${Environment}-policy-${Infrastructure}-ecs_task_s3"
+
+  EcsTaskEksManagedPolicy:
+    Type: AWS::IAM::ManagedPolicy
+    Properties:
+      PolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Action:
+              - "eks:Update*"
+              - "eks:Describe*"
+              - "eks:AssociateEncryptionConfig"
+              - "eks:UntagResource"
+              - "eks:CreateFargateProfile"
+              - "eks:TagResource"
+              - "eks:AccessKubernetesApi"
+              - "eks:CreateAddon"
+              - "eks:AssociateIdentityProviderConfig"
+              - "eks:RegisterCluster"
+              - "eks:CreateCluster"
+              - "eks:DeleteFargateProfile"
+              - "eks:DescribeFargateProfile"
+              - "eks:DescribeAddon"
+              - "eks:DeleteCluster"
+              - "eks:DeleteAddon"
+              - "eks:CreateAddon"
+              - "eks:List*"
+              - "iam:CreatePolicy"
+              - "iam:GetRole"
+              - "iam:GetPolicy"
+              - "iam:CreateRole"
+              - "kms:DescribeKey"
+              - "kms:CreateGrant"
+              - "logs:CreateLogGroup"
+              - "logs:DeleteLogGroup"
+              - "logs:PutRetentionPolicy"
+              - "ec2:AuthorizeSecurityGroupIngress"
+              - "ec2:AuthorizeSecurityGroupEgress"
+              - "ec2:CreateSecurityGroup"
+              - "ec2:DeleteSecurityGroup"            
+              - "ec2:DescribeSecurityGroups"
+              - "ec2:DescribeSecurityGroupRules"
+              - "ec2:DescribeInstances"
+              - "ec2:DescribeNetworkInterfaces"
+              - "ec2:CreateTags"
+              - "ec2:DescribeSubnets"
+              - "ec2:DescribeRouteTables"
+              - "ec2:DescribeVpcAttribute"
+              - "ec2:RevokeSecurityGroupIngress"
+              - "ec2:RevokeSecurityGroupEgress"
+              - "iam:TagRole"
+              - "iam:UpdateOpenIDConnectProviderThumbprint"
+              - "iam:DeletePolicy"
+              - "iam:DeleteRole"
+              - "iam:AttachRolePolicy"
+              - "iam:CreateOpenIDConnectProvider"
+              - "iam:PassRole"
+              - "iam:DetachRolePolicy"
+              - "iam:ListPolicyVersions"
+              - "iam:DeleteOpenIDConnectProvider"
+              - "iam:GetOpenIDConnectProvider"
+              - "iam:TagOpenIDConnectProvider"
+              - "iam:CreatePolicyVersion"
+              - "iam:DeletePolicyVersion"
+              - "iam:UpdateAssumeRolePolicy"
+              - "iam:CreateServiceLinkedRole"
+              - "secretsmanager:GetSecretValue"
+            Resource: "*"
+      ManagedPolicyName: !Sub "${System}-${Environment}-policy-${Infrastructure}-ecs_task_eks"
+
+# ------------------------------------------------------------#
+# ECS Task Exec Role
+# ------------------------------------------------------------#
+  EcsTaskExecRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: "Allow"
+            Principal:
+              Service: "ecs-tasks.amazonaws.com"
+            Action: "sts:AssumeRole"
+      Description: "IAM Role for ECS Task Execution"
+      ManagedPolicyArns:
+        - "arn:aws:iam::aws:policy/service-role/AmazonECSTaskExecutionRolePolicy"
+        - "arn:aws:iam::aws:policy/AmazonEC2ContainerRegistryReadOnly"
+      Policies:
+        - PolicyName: AllowPassRole
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action: iam:PassRole
+                Resource: !Sub "arn:aws:ecr:ap-northeast-1:${AWS::AccountId}:bastion-${Infrastructure}/*"
+      RoleName: !Sub "${System}-${Environment}-role-${Infrastructure}-ecs_taskexec"
+      Tags:
+        - Key: Name
+          Value: !Sub "${System}-${Environment}-role-${Infrastructure}-ecs_taskexec"
+        - Key: Infrastructure
+          Value: !Ref Infrastructure
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: System
+          Value: !Ref System
+
+# ------------------------------------------------------------#
+# ECS Task Role
+# ------------------------------------------------------------#
+  EcsTaskRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: "Allow"
+            Principal:
+              Service: "ecs-tasks.amazonaws.com"
+            Action: "sts:AssumeRole"
+      Description: "IAM Role for ECS Task"
+      ManagedPolicyArns:
+        - !Ref EcsExecLoggingManagedPolicy
+        - !Ref EcsExecSsmManagedPolicy
+        - !Ref SessionManagerPassRoleManagedPolicy
+        - !Ref SessionManagerSsmManagedPolicy
+        - !Ref EcsTaskRDSManagedPolicy
+        - !Ref EcsTaskKmsManagedPolicy
+        - !Ref EcsTaskS3ManagedPolicy
+        - !Ref EcsTaskEksManagedPolicy
+        - "arn:aws:iam::aws:policy/AWSCloudFormationFullAccess"
+      Policies:
+        - PolicyName: AllowPassRole
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action: iam:PassRole
+                Resource: "*"
+      RoleName: !Sub "${System}-${Environment}-role-${Infrastructure}-ecs_task"
+      Tags:
+        - Key: Name
+          Value: !Sub "${System}-${Environment}-role-${Infrastructure}-ecs_task"
+        - Key: Infrastructure
+          Value: !Ref Infrastructure
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: System
+          Value: !Ref System
+
+# ------------------------------------------------------------#
+# SSM service Role
+# ------------------------------------------------------------#
+  SsmServiceRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: "Allow"
+            Principal:
+              Service: "ssm.amazonaws.com"
+            Action: "sts:AssumeRole"
+      Description: "IAM Role for SSM"
+      ManagedPolicyArns:
+        - "arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore"
+      RoleName: !Sub "${System}-${Environment}-role-${Infrastructure}-ssm"
+      Tags:
+        - Key: Name
+          Value: !Sub "${System}-${Environment}-role-${Infrastructure}-ssm"
+        - Key: Infrastructure
+          Value: !Ref Infrastructure
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: System
+          Value: !Ref System
+
+# ------------------------------------------------------------#
+#  Outputs
+# ------------------------------------------------------------#
+Outputs:
+  EcsServiceSecurityGroupId:
+    Value: !Ref EcsServiceSecurityGroup
+    Export:
+      Name: !Sub export-scm-${Environment}-sg-${Infrastructure}-ecs

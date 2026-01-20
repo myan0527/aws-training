@@ -1,0 +1,82 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: ECR Private Repository
+
+# ------------------------------------------------------------#
+# Metadata
+# ------------------------------------------------------------#
+Metadata:
+  AWS::CloudFormation::Interface:
+    ParameterGroups:
+      - Label:
+          default: Common Configuration
+        Parameters:
+          - System
+          - Environment
+          - Infrastructure
+          - RepositoryName
+          - ImageCountThreshold
+
+# ------------------------------------------------------------#
+# Input Parameters
+# ------------------------------------------------------------#
+Parameters:
+  System:
+    Description: "System Name"
+    Type: String
+
+  Environment:
+    Description: "Environment Name"
+    Type: String
+
+  Infrastructure:
+    Description: "Infrastructure Name"
+    Type: String
+
+  RepositoryName:
+    Type: String
+    Description: The name of the service for which the ECR repository will be created.
+
+  ImageCountThreshold:
+    Type: Number
+    Description: The threshold for the image count in the ECR repository.
+
+Resources:
+  EcrRepository:
+    Type: AWS::ECR::Repository
+    Properties:
+      EmptyOnDelete: false
+      EncryptionConfiguration:
+        EncryptionType: AES256
+      ImageScanningConfiguration:
+        ScanOnPush: true
+      ImageTagMutability: IMMUTABLE
+      LifecyclePolicy:
+        LifecyclePolicyText: !Sub
+          - |
+            {
+                "rules": [
+                    {
+                        "rulePriority": 1,
+                        "description": "Delete old images more than ${ImageCountThreshold} images",
+                        "selection": {
+                            "tagStatus": "any",
+                            "countType": "imageCountMoreThan",
+                            "countNumber": ${ImageCountThreshold}
+                        },
+                        "action": {
+                            "type": "expire"
+                        }
+                    }
+                ]
+            }
+          - ImageCountThreshold: !Ref ImageCountThreshold
+      RepositoryName: !Ref RepositoryName
+      Tags:
+        - Key: Name
+          Value: !Ref RepositoryName
+        - Key: Infrastructure
+          Value: !Ref Infrastructure
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: System
+          Value: !Ref System

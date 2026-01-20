@@ -1,0 +1,315 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: "This temlate deploys VPC Endpoints" 
+# ------------------------------------------------------------#
+# Metadata
+# ------------------------------------------------------------#
+Metadata:
+  AWS::CloudFormation::Interface:
+    ParameterGroups:
+      - Label:
+          default: "Network Configuration"
+        Parameters:
+          - System
+          - Infrastructure
+          - Environment
+          - BastionSubnet1aIP
+          - BastionSubnet1cIP
+
+# ------------------------------------------------------------#
+# Input Parameters
+# ------------------------------------------------------------#
+Parameters:
+  System:
+    Description: "System Name"
+    Type: String
+
+  Environment:
+    Description: "Environment Name"
+    Type: String
+
+  Infrastructure:
+    Description: "Infrastructure Name"
+    Type: String
+  
+  BastionSubnet1aIP:
+    Description: "Bastion Subnet CIDR (AZ=ap-northeast-1a)"
+    Type: String
+
+  BastionSubnet1cIP:
+    Description: "Bastion Subnet CIDR(AZ=ap-northeast-1c)"
+    Type: String
+
+Resources:
+# ------------------------------------------------------------#
+#  VPCEndpoint for S3
+# ------------------------------------------------------------#
+  S3Endpoint:
+    Type: AWS::EC2::VPCEndpoint
+    Properties:
+      RouteTableIds:
+        - Fn::ImportValue: !Sub export-${System}-${Environment}-rtb-public-1a-${Infrastructure}
+        - Fn::ImportValue: !Sub export-${System}-${Environment}-rtb-public-1c-${Infrastructure}
+        - Fn::ImportValue: !Sub export-${System}-${Environment}-rtb-private-1a-${Infrastructure}
+        - Fn::ImportValue: !Sub export-${System}-${Environment}-rtb-private-1c-${Infrastructure}
+       # - Fn::ImportValue: !Sub export-${System}-${Environment}-rtb-${Infrastructure}-private-1a-03
+       # - Fn::ImportValue: !Sub export-${System}-${Environment}-rtb-${Infrastructure}-private-1c-04
+       # - Fn::ImportValue: !Sub export-${System}-${Environment}-rtb-${Infrastructure}-private-1d-05
+       # - Fn::ImportValue: !Sub export-${System}-${Environment}-rtb-${Infrastructure}-private-1a-06
+       # - Fn::ImportValue: !Sub export-${System}-${Environment}-rtb-${Infrastructure}-private-1c-07
+      ServiceName: !Sub com.amazonaws.${AWS::Region}.s3
+      #VpcEndpointType: Gateway
+      VpcId:
+        Fn::ImportValue: !Sub export-${System}-${Environment}-vpc-${Infrastructure}
+
+# ------------------------------------------------------------#
+#  VPCEndpoint for ECR
+# ------------------------------------------------------------#
+  ECRVpceSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: !Sub "${System}-${Environment}-sg-vpce_ecr-${Infrastructure}"
+      GroupName: !Sub "${System}-${Environment}-sg-vpce_ecr-${Infrastructure}"
+      VpcId:
+        Fn::ImportValue: !Sub export-${System}-${Environment}-vpc-${Infrastructure}
+
+  ECRVpceSecurityGroupIngress:
+    Type: AWS::EC2::SecurityGroupIngress
+    Properties:
+      Description: !Sub "from ${System}-${Environment}-vpc-${Infrastructure}"
+      FromPort: 443
+      GroupId: !Ref ECRVpceSecurityGroup
+      IpProtocol: "tcp"
+      ToPort: 443
+      CidrIp: 
+        Fn::ImportValue: !Sub export-${System}-${Environment}-vpc-cidr-${Infrastructure}
+
+  ECREndpoint1:
+    Type: AWS::EC2::VPCEndpoint
+    Properties:
+      PrivateDnsEnabled: true
+      SecurityGroupIds:
+        - !Ref ECRVpceSecurityGroup
+      ServiceName: com.amazonaws.ap-northeast-1.ecr.api
+      SubnetIds:
+        - Fn::ImportValue: !Sub export-${System}-${Environment}-subnet-private-1a-${Infrastructure}
+        - Fn::ImportValue: !Sub export-${System}-${Environment}-subnet-private-1c-${Infrastructure}
+      VpcEndpointType: Interface
+      VpcId:
+        Fn::ImportValue: !Sub export-${System}-${Environment}-vpc-${Infrastructure}
+
+  ECREndpoint2:
+    Type: AWS::EC2::VPCEndpoint
+    Properties:
+      PrivateDnsEnabled: "true"
+      SecurityGroupIds:
+        - !Ref ECRVpceSecurityGroup
+      ServiceName: com.amazonaws.ap-northeast-1.ecr.dkr
+      SubnetIds:
+        - Fn::ImportValue: !Sub export-${System}-${Environment}-subnet-private-1a-${Infrastructure}
+        - Fn::ImportValue: !Sub export-${System}-${Environment}-subnet-private-1c-${Infrastructure}
+      VpcEndpointType: Interface
+      VpcId:
+        Fn::ImportValue: !Sub export-${System}-${Environment}-vpc-${Infrastructure}
+
+# ------------------------------------------------------------#
+#  VPCEndpoint for CloudWatch Logs
+# ------------------------------------------------------------#
+  CloudWatchLogsVpceSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: !Sub ${System}-${Environment}-sg-vpce_cwlogs-${Infrastructure}
+      GroupName: !Sub ${System}-${Environment}-sg-vpce_cwlogs-${Infrastructure}
+      VpcId:
+        Fn::ImportValue: !Sub export-${System}-${Environment}-vpc-${Infrastructure}
+
+  CloudWatchLogsSecurityGroupIngress:
+    Type: AWS::EC2::SecurityGroupIngress
+    Properties:
+      FromPort: 443
+      GroupId: !Ref CloudWatchLogsVpceSecurityGroup
+      IpProtocol: tcp
+      ToPort: 443
+      CidrIp: 
+        Fn::ImportValue: !Sub export-${System}-${Environment}-vpc-cidr-${Infrastructure}
+
+  CloudWatchLogsEndpoint:
+    Type: AWS::EC2::VPCEndpoint
+    Properties:
+      PrivateDnsEnabled: true
+      SecurityGroupIds:
+        - !Ref CloudWatchLogsVpceSecurityGroup
+      ServiceName: com.amazonaws.ap-northeast-1.logs
+      SubnetIds:
+        - Fn::ImportValue: !Sub export-${System}-${Environment}-subnet-private-1a-${Infrastructure}
+        - Fn::ImportValue: !Sub export-${System}-${Environment}-subnet-private-1c-${Infrastructure}
+      VpcEndpointType: Interface
+      VpcId:
+        Fn::ImportValue: !Sub export-${System}-${Environment}-vpc-${Infrastructure}
+
+# ------------------------------------------------------------#
+#  VPCEndpoint for KinesisDataFirehose
+# ------------------------------------------------------------#
+  KDFVpceSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: !Sub ${System}-${Environment}-sg-vpce_kdf-${Infrastructure}
+      GroupName: !Sub ${System}-${Environment}-sg-vpce_kdf-${Infrastructure}
+      VpcId:
+        Fn::ImportValue: !Sub export-${System}-${Environment}-vpc-${Infrastructure}
+
+  KDFVpceSecurityGroupECSIngress:
+    Type: "AWS::EC2::SecurityGroupIngress"
+    Properties:
+      FromPort: 443
+      GroupId: !Ref KDFVpceSecurityGroup
+      IpProtocol: tcp
+      ToPort: 443
+      CidrIp: 
+        Fn::ImportValue: !Sub export-${System}-${Environment}-vpc-cidr-${Infrastructure}
+
+  KDFEndpoint:
+    Type: "AWS::EC2::VPCEndpoint"
+    Properties:
+      PrivateDnsEnabled: true
+      SecurityGroupIds:
+        - !Ref KDFVpceSecurityGroup
+      ServiceName: com.amazonaws.ap-northeast-1.kinesis-firehose
+      SubnetIds:
+        - Fn::ImportValue: !Sub export-${System}-${Environment}-subnet-private-1a-${Infrastructure}
+        - Fn::ImportValue: !Sub export-${System}-${Environment}-subnet-private-1c-${Infrastructure}
+      VpcEndpointType: Interface
+      VpcId:
+        Fn::ImportValue: !Sub export-${System}-${Environment}-vpc-${Infrastructure}
+
+# ------------------------------------------------------------#
+#  VPCEndpoint for SessionManager
+# ------------------------------------------------------------#
+  SSMVpceSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: !Sub ${System}-${Environment}-sg-vpce_ssm-${Infrastructure}
+      GroupName: !Sub ${System}-${Environment}-sg-vpce_ssm-${Infrastructure}
+      VpcId:
+        Fn::ImportValue: !Sub export-${System}-${Environment}-vpc-${Infrastructure}
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 443
+          ToPort: 443
+          CidrIp: !Ref BastionSubnet1aIP
+        - IpProtocol: tcp
+          FromPort: 443
+          ToPort: 443
+          CidrIp: !Ref BastionSubnet1cIP
+  
+  SSMEndpoint:
+    Type: AWS::EC2::VPCEndpoint
+    Properties:
+      PrivateDnsEnabled: true
+      SecurityGroupIds:
+        - !Ref SSMVpceSecurityGroup
+      ServiceName: com.amazonaws.ap-northeast-1.ssm
+      SubnetIds:
+        - Fn::ImportValue: !Sub export-${System}-${Environment}-subnet-private-1a-${Infrastructure}
+        - Fn::ImportValue: !Sub export-${System}-${Environment}-subnet-private-1c-${Infrastructure}
+      VpcEndpointType: Interface
+      VpcId:
+        Fn::ImportValue: !Sub export-${System}-${Environment}-vpc-${Infrastructure}
+
+  SSMMessagesEndpoint:
+    Type: "AWS::EC2::VPCEndpoint"
+    Properties:
+      PrivateDnsEnabled: true
+      SecurityGroupIds:
+        - !Ref SSMVpceSecurityGroup
+      ServiceName: com.amazonaws.ap-northeast-1.ssmmessages
+      SubnetIds:
+        - Fn::ImportValue: !Sub export-${System}-${Environment}-subnet-private-1a-${Infrastructure}
+        - Fn::ImportValue: !Sub export-${System}-${Environment}-subnet-private-1c-${Infrastructure}
+      VpcEndpointType: Interface
+      VpcId:
+        Fn::ImportValue: !Sub export-${System}-${Environment}-vpc-${Infrastructure}
+
+# ------------------------------------------------------------#
+#  VPCEndpoint for CloudFormation
+# ------------------------------------------------------------#
+  CFnVpceSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: !Sub ${System}-${Environment}-sg-vpce_cfn-${Infrastructure}
+      GroupName: !Sub ${System}-${Environment}-sg-vpce_cfn-${Infrastructure}
+      VpcId:
+        Fn::ImportValue: !Sub export-${System}-${Environment}-vpc-${Infrastructure}
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 443
+          ToPort: 443
+          CidrIp: !Ref BastionSubnet1aIP
+        - IpProtocol: tcp
+          FromPort: 443
+          ToPort: 443
+          CidrIp: !Ref BastionSubnet1cIP
+  
+  CloudFormationEndpoint:
+    Type: AWS::EC2::VPCEndpoint
+    Properties:
+      PrivateDnsEnabled: true
+      SecurityGroupIds:
+        - !Ref CFnVpceSecurityGroup
+      ServiceName: com.amazonaws.ap-northeast-1.cloudformation
+      SubnetIds:
+        - Fn::ImportValue: !Sub export-${System}-${Environment}-subnet-private-1a-${Infrastructure}
+        - Fn::ImportValue: !Sub export-${System}-${Environment}-subnet-private-1c-${Infrastructure}
+      VpcEndpointType: Interface
+      VpcId:
+        Fn::ImportValue: !Sub export-${System}-${Environment}-vpc-${Infrastructure}
+
+# ------------------------------------------------------------#
+#  Outputs
+# ------------------------------------------------------------#
+Outputs:
+  S3VpcEndpoint:
+    Value: !Ref S3Endpoint
+    Export:
+      Name: !Sub export-${System}-${Environment}-vpce-s3-${Infrastructure}
+
+  ECRVpcEndpoint1:
+    Value: !Ref ECREndpoint1
+    Export:
+      Name: !Sub export-${System}-${Environment}-vpce-ecr-${Infrastructure}-api
+
+  ECRVpcEndpoint2:
+    Value: !Ref ECREndpoint2
+    Export:
+      Name: !Sub export-${System}-${Environment}-vpce-ecr-${Infrastructure}-dkr
+  
+  ECRVpceSecurityGroupId:
+    Value: !Ref ECRVpceSecurityGroup
+    Export:
+      Name: !Sub export-${System}-${Environment}-sg-vpce-ecr-${Infrastructure}
+
+  CloudWatchLogsVpcEndpoint:
+    Value: !Ref CloudWatchLogsEndpoint
+    Export:
+      Name: !Sub export-${System}-${Environment}-vpce-cwlogs-${Infrastructure}
+
+  KDFVpcEndpoint:
+    Value: !Ref KDFEndpoint
+    Export:
+      Name: !Sub export-${System}-${Environment}-vpce-kdf-${Infrastructure}
+
+  SSMVpcEndpoint:
+    Value: !Ref SSMEndpoint
+    Export:
+      Name: !Sub export-${System}-${Environment}-vpce-ssm-${Infrastructure}
+
+  SSMMessagesVpcEndpoint:
+    Value: !Ref SSMMessagesEndpoint
+    Export:
+      Name: !Sub export-${System}-${Environment}-vpce-ssmmessages-${Infrastructure}
+
+  CFnVpcEndpoint:
+    Value: !Ref CloudFormationEndpoint
+    Export:
+      Name: !Sub export-${System}-${Environment}-vpce-cfn-${Infrastructure}
+      Export:
+        Name: !Sub ${System}-${Environment}-sg-vpce_cfn-${Infrastructure}
